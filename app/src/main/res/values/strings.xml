@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Phone Assistant</string>
+    <string name="accessibility_service_name">Phone Assistant 控制服务</string>
+    <string name="accessibility_service_description">用于执行返回、主页、打开应用、点击文本、滚动等手机操作。</string>
+</resources>

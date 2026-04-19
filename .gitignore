@@ -1,0 +1,39 @@
+# Build
+*.iml
+.gradle/
+build/
+app/build/
+app/.cxx/
+
+# Local
+local.properties
+
+# IDE user-specific
+.idea/workspace.xml
+.idea/deploymentTargetSelector.xml
+.idea/deviceManager.xml
+.idea/appInsightsSettings.xml
+.idea/MarsCodeWorkspaceAppSettings.xml
+.idea/caches/
+.idea/libraries/
+.idea/shelf/
+.idea/navEditor.xml
+.idea/assetWizardSettings.xml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude AI
+.claude/
+
+# Internal dev notes
+docs/MEMORY.md
+docs/debugging.md
+
+# Binaries
+*.apk
+*.aab
+*.jks
+*.keystore
+*.log
