@@ -9,16 +9,7 @@ app/.cxx/
 local.properties
 
 # IDE user-specific
-.idea/workspace.xml
-.idea/deploymentTargetSelector.xml
-.idea/deviceManager.xml
-.idea/appInsightsSettings.xml
-.idea/MarsCodeWorkspaceAppSettings.xml
-.idea/caches/
-.idea/libraries/
-.idea/shelf/
-.idea/navEditor.xml
-.idea/assetWizardSettings.xml
+.idea
 
 # OS
 .DS_Store
