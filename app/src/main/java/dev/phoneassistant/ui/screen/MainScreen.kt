@@ -35,10 +35,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -92,7 +89,6 @@ fun MainScreen(
     uiState: AssistantUiState,
     onDraftChanged: (String) -> Unit,
     onSend: () -> Unit,
-    onUsePrompt: (String) -> Unit,
     onRefreshAccessibility: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onStartRecording: (autoSend: Boolean) -> Unit,
@@ -202,17 +198,6 @@ fun MainScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    if (uiState.isAccessibilityEnabled) "无障碍已连接" else "请先开启无障碍服务",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (uiState.isAccessibilityEnabled) Color(0xFF2E7D32)
-                                    else MaterialTheme.colorScheme.error
-                                )
-                                Text(
-                                    "·",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
                                     when (uiState.mode) {
                                         AssistantMode.OFFLINE -> "离线"
                                         AssistantMode.ONLINE -> "在线"
@@ -221,14 +206,18 @@ fun MainScreen(
                                     color = MaterialTheme.colorScheme.primary
                                 )
                                 // Show active model name
-                                activeModel?.let { model ->
+                                val displayModelName = when (uiState.mode) {
+                                    AssistantMode.ONLINE -> uiState.model
+                                    AssistantMode.OFFLINE -> activeModel?.name
+                                }
+                                if (!displayModelName.isNullOrBlank()) {
                                     Text(
                                         "·",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                     Text(
-                                        model.name,
+                                        displayModelName,
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         maxLines = 1
@@ -297,9 +286,6 @@ fun MainScreen(
                     .padding(paddingValues)
                     .padding(horizontal = 16.dp)
             ) {
-                PromptRow(onUsePrompt = onUsePrompt)
-                Spacer(modifier = Modifier.height(12.dp))
-                Divider()
                 LazyColumn(
                     modifier = Modifier.weight(1f),
                     state = listState,
@@ -320,12 +306,7 @@ fun MainScreen(
                                     modifier = Modifier.width(20.dp), strokeWidth = 2.dp
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    when (uiState.mode) {
-                                        AssistantMode.OFFLINE -> "正在本地推理并执行动作…"
-                                        AssistantMode.ONLINE -> "正在请求 Qwen 并执行动作…"
-                                    }
-                                )
+                                Text("正在生成回复…")
                             }
                         }
                     }
@@ -573,41 +554,6 @@ private fun PulsingDot(color: Color) {
 }
 
 // ─── Reusable composables ──────────────────────────────────────
-
-@Composable
-private fun PromptRow(onUsePrompt: (String) -> Unit) {
-    val prompts = listOf(
-        "打开微信", "返回桌面", "下滑通知栏",
-        "打开设置", "向下滑动", "点击发送"
-    )
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("快捷指令", style = MaterialTheme.typography.titleSmall)
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            prompts.take(3).forEach { prompt ->
-                AssistChip(
-                    onClick = { onUsePrompt(prompt) },
-                    label = { Text(prompt) },
-                    colors = AssistChipDefaults.assistChipColors()
-                )
-            }
-        }
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            prompts.drop(3).forEach { prompt ->
-                AssistChip(
-                    onClick = { onUsePrompt(prompt) },
-                    label = { Text(prompt) },
-                    colors = AssistChipDefaults.assistChipColors()
-                )
-            }
-        }
-    }
-}
 
 @Composable
 private fun MessageBubble(message: ChatMessage) {

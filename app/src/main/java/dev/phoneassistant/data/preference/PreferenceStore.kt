@@ -7,6 +7,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import dev.phoneassistant.data.model.AssistantMode
 import dev.phoneassistant.data.model.AssistantSettings
 import dev.phoneassistant.data.model.DEFAULT_QWEN_MODEL
+import dev.phoneassistant.data.model.TaskMode
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -17,13 +18,16 @@ class PreferenceStore(private val context: Context) {
     private val apiKeyKey = stringPreferencesKey("api_key")
     private val modelKey = stringPreferencesKey("model")
     private val modeKey = stringPreferencesKey("mode")
+    private val taskModeKey = stringPreferencesKey("task_mode")
 
     val settingsFlow: Flow<AssistantSettings> = context.dataStore.data.map { preferences ->
         AssistantSettings(
             apiKey = preferences[apiKeyKey].orEmpty(),
             model = preferences[modelKey].orEmpty().ifBlank { DEFAULT_QWEN_MODEL },
             mode = preferences[modeKey]?.let { runCatching { AssistantMode.valueOf(it) }.getOrNull() }
-                ?: AssistantMode.OFFLINE
+                ?: AssistantMode.OFFLINE,
+            taskMode = preferences[taskModeKey]?.let { runCatching { TaskMode.valueOf(it) }.getOrNull() }
+                ?: TaskMode.CHAT
         )
     }
 
@@ -37,6 +41,12 @@ class PreferenceStore(private val context: Context) {
     suspend fun saveMode(mode: AssistantMode) {
         context.dataStore.edit { preferences ->
             preferences[modeKey] = mode.name
+        }
+    }
+
+    suspend fun saveTaskMode(taskMode: TaskMode) {
+        context.dataStore.edit { preferences ->
+            preferences[taskModeKey] = taskMode.name
         }
     }
 }

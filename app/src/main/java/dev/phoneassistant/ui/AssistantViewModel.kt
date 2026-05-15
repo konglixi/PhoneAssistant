@@ -9,12 +9,13 @@ import dev.phoneassistant.data.model.AssistantSettings
 import dev.phoneassistant.data.model.ChatMessage
 import dev.phoneassistant.data.model.ChatRole
 import dev.phoneassistant.data.model.DEFAULT_QWEN_MODEL
-import dev.phoneassistant.data.model.ModelCatalog
 import dev.phoneassistant.data.model.ModelInfo
 import dev.phoneassistant.data.model.ModelRepository
+import dev.phoneassistant.data.model.TaskMode
 import dev.phoneassistant.data.model.isPlanner
 import dev.phoneassistant.data.preference.PreferenceStore
 import dev.phoneassistant.domain.AssistantEngine
+import dev.phoneassistant.domain.chat.PromptBuilder
 import dev.phoneassistant.domain.speech.SpeechState
 import dev.phoneassistant.offline.speech.VoskModelManager
 import dev.phoneassistant.service.AssistantAccessibilityService
@@ -34,11 +35,12 @@ data class AssistantUiState(
     val apiKey: String = "",
     val model: String = DEFAULT_QWEN_MODEL,
     val mode: AssistantMode = AssistantMode.OFFLINE,
+    val taskMode: TaskMode = TaskMode.CHAT,
     val messages: List<ChatMessage> = listOf(
         ChatMessage(
             id = 1,
             role = ChatRole.SYSTEM,
-            content = "先在设置页保存 Qwen API Key（在线模式需要），再开启无障碍服务。之后你可以说：打开微信、返回桌面、下滑通知栏、点击发送、输入你好。"
+            content = "欢迎使用 Phone Assistant！离线模式可直接对话，在线模式需在设置页填写 Qwen API Key。"
         )
     ),
     val isLoading: Boolean = false,
@@ -94,7 +96,8 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                     it.copy(
                         apiKey = settings.apiKey,
                         model = settings.model,
-                        mode = settings.mode
+                        mode = settings.mode,
+                        taskMode = settings.taskMode
                     )
                 }
                 engine.configureOnline(settings)
@@ -102,11 +105,15 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                     engine.switchMode(settings.mode)
                     rebindSpeechObservers()
                 }
+                if (engine.taskMode.value != settings.taskMode) {
+                    engine.switchTaskMode(settings.taskMode)
+                }
             }
         }
         refreshAccessibilityStatus()
         observeModelManagers()
         observeEngineMode()
+        observeEngineTaskMode()
         observeActiveModel()
         bindSpeechObservers()
         initializeCurrentMode()
@@ -162,6 +169,16 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch {
             engine.mode.collect { mode ->
                 _uiState.update { it.copy(mode = mode) }
+            }
+        }
+    }
+
+    // ── Engine task mode observer ──
+
+    private fun observeEngineTaskMode() {
+        viewModelScope.launch {
+            engine.taskMode.collect { taskMode ->
+                _uiState.update { it.copy(taskMode = taskMode) }
             }
         }
     }
@@ -247,9 +264,21 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun saveSettings(apiKey: String, model: String) {
+        val trimmedKey = apiKey.trim()
+        val trimmedModel = model.trim().ifBlank { DEFAULT_QWEN_MODEL }
+        // Immediately update UI state — don't wait for async DataStore roundtrip
+        _uiState.update { it.copy(apiKey = trimmedKey, model = trimmedModel) }
+        engine.configureOnline(
+            AssistantSettings(
+                apiKey = trimmedKey,
+                model = trimmedModel,
+                mode = _uiState.value.mode,
+                taskMode = _uiState.value.taskMode
+            )
+        )
         viewModelScope.launch {
             preferenceStore.saveSettings(apiKey, model)
-            appendAssistantMessage("配置已保存，当前模型：${model.ifBlank { DEFAULT_QWEN_MODEL }}")
+            appendAssistantMessage("配置已保存，当前模型：$trimmedModel")
         }
     }
 
@@ -266,6 +295,22 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                 appendAssistantMessage("已切换到$modeName")
             } catch (e: Exception) {
                 appendAssistantMessage("切换模式失败：${e.message}")
+            }
+        }
+    }
+
+    fun switchTaskMode(taskMode: TaskMode) {
+        viewModelScope.launch {
+            preferenceStore.saveTaskMode(taskMode)
+            engine.switchTaskMode(taskMode)
+            val modeName = when (taskMode) {
+                TaskMode.CHAT -> "对话模式"
+                TaskMode.EXECUTION -> "设备执行模式"
+            }
+            appendAssistantMessage("已切换到$modeName")
+            // Warn if switching to EXECUTION but current config can't execute
+            if (taskMode == TaskMode.EXECUTION && !engine.canExecuteDeviceOps()) {
+                appendAssistantMessage("当前配置不支持设备执行。请切换到在线模式，或激活支持规划的离线模型。")
             }
         }
     }
@@ -358,6 +403,10 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
             try {
                 engine.switchModel(model)
                 appendAssistantMessage("已切换到模型 ${model.name}")
+                // Warn if in EXECUTION mode but the new model can't execute in current config
+                if (_uiState.value.taskMode == TaskMode.EXECUTION && !engine.canExecuteDeviceOps()) {
+                    appendAssistantMessage("当前模型不支持设备执行模式。请切换到对话模式，或切换到在线模式使用在线模型。")
+                }
             } catch (e: Exception) {
                 appendAssistantMessage("切换模型失败：${e.message}")
             }
@@ -405,11 +454,20 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun sendCommand(rawCommand: String = uiState.value.draft) {
         val command = rawCommand.trim()
-        if (command.isBlank() && _uiState.value.attachedImages.isEmpty()
-            && _uiState.value.attachedAudio == null && _uiState.value.attachedVideo == null
-        ) return
+        // Capture attachments before clearing
+        val images = _uiState.value.attachedImages.toList()
+        val audio = _uiState.value.attachedAudio
+        val video = _uiState.value.attachedVideo
 
-        appendMessage(ChatRole.USER, command)
+        if (command.isBlank() && images.isEmpty() && audio == null && video == null) return
+
+        appendMessage(
+            ChatRole.USER, command,
+            imageUris = images.ifEmpty { null },
+            audioUri = audio,
+            videoUri = video
+        )
+        clearAttachments()
         _uiState.update {
             it.copy(
                 isLoading = true,
@@ -426,12 +484,29 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
             return
         }
 
-        val activeModel = _uiState.value.activeModelId?.let { ModelCatalog.findById(it) }
-        val isCommandMode = activeModel?.isPlanner() == true
-            || _uiState.value.mode == AssistantMode.ONLINE
+        // Build multimodal prompt with attachments if any
+        val prompt = if (images.isNotEmpty() || audio != null || video != null) {
+            PromptBuilder.buildPrompt(
+                context = getApplication(),
+                text = command,
+                imageUris = images.ifEmpty { null },
+                audioUri = audio,
+                videoUri = video
+            )
+        } else {
+            command
+        }
+
+        val isCommandMode = _uiState.value.taskMode == TaskMode.EXECUTION
 
         viewModelScope.launch {
             if (isCommandMode) {
+                // Validate that the current config actually supports device execution
+                if (!engine.canExecuteDeviceOps()) {
+                    appendAssistantMessage("设备执行模式需要在线模型或支持规划的离线模型。请在设置中切换到在线模式，或激活支持规划的离线模型。")
+                    _uiState.update { it.copy(isLoading = false, isGenerating = false) }
+                    return@launch
+                }
                 // Command/planner mode — single turn, JSON parse, action execution
                 runCatching {
                     engine.processCommand(command)
@@ -476,7 +551,7 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                 }
 
                 runCatching {
-                    engine.generateChat(command)
+                    engine.generateChat(prompt)
                 }.onFailure { throwable ->
                     // Update the streaming message with error
                     _uiState.update { state ->
@@ -496,7 +571,6 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
                 streamJob.cancel()
             }
 
-            clearAttachments()
             refreshAccessibilityStatus()
             _uiState.update { it.copy(isLoading = false, isGenerating = false) }
         }
@@ -513,13 +587,22 @@ class AssistantViewModel(application: Application) : AndroidViewModel(applicatio
         appendMessage(ChatRole.ASSISTANT, content)
     }
 
-    private fun appendMessage(role: ChatRole, content: String) {
+    private fun appendMessage(
+        role: ChatRole,
+        content: String,
+        imageUris: List<Uri>? = null,
+        audioUri: Uri? = null,
+        videoUri: Uri? = null
+    ) {
         _uiState.update { state ->
             state.copy(
                 messages = state.messages + ChatMessage(
                     id = nextMessageId.getAndIncrement(),
                     role = role,
-                    content = content
+                    content = content,
+                    imageUris = imageUris,
+                    audioUri = audioUri,
+                    videoUri = videoUri
                 )
             )
         }

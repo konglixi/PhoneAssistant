@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowUpward
@@ -39,7 +38,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.unit.dp
 import dev.phoneassistant.data.model.ModelInfo
 import dev.phoneassistant.data.model.isAudio
@@ -47,15 +45,15 @@ import dev.phoneassistant.data.model.isVisual
 import dev.phoneassistant.data.model.supportsThinkingSwitch
 
 /**
- * Rich chat input bar inspired by MnnLlmChat's layout.
+ * Rich chat input bar.
  *
  * Structure:
- *  ┌───────────────────────────────────────┐
- *  │ [Attachment previews]                 │
- *  │ TextField (1-5 lines)                 │
- *  │ [+] [mic]           [Thinking] [Send] │
- *  │ [Attachment menu - expandable]        │
- *  └───────────────────────────────────────┘
+ *  ┌──────────────────────────────────────────┐
+ *  │ [Attachment previews]                    │
+ *  │ TextField (1-5 lines)            [Send]  │
+ *  │ [+] [mic]           [Thinking]           │
+ *  │ [Attachment menu - expandable]           │
+ *  └──────────────────────────────────────────┘
  */
 @Composable
 fun ChatInputBar(
@@ -122,28 +120,91 @@ fun ChatInputBar(
                 )
             }
 
-            // Text input
-            TextField(
-                value = draft,
-                onValueChange = onDraftChanged,
+            // Text input row with send button inline
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 48.dp, max = 150.dp),
-                placeholder = { Text("输入消息...") },
-                enabled = enabled && !isGenerating,
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                    disabledContainerColor = Color.Transparent,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    disabledIndicatorColor = Color.Transparent,
-                ),
-                maxLines = 5,
-                textStyle = MaterialTheme.typography.bodyLarge
-            )
+                    .padding(end = 4.dp),
+                verticalAlignment = Alignment.Bottom
+            ) {
+                TextField(
+                    value = draft,
+                    onValueChange = onDraftChanged,
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp, max = 150.dp),
+                    placeholder = { Text("输入消息...") },
+                    enabled = enabled && !isGenerating,
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        disabledContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        disabledIndicatorColor = Color.Transparent,
+                    ),
+                    maxLines = 5,
+                    textStyle = MaterialTheme.typography.bodyLarge
+                )
 
-            // Bottom button row
+                // Send / Stop button — always visible next to TextField
+                when {
+                    isGenerating -> {
+                        IconButton(
+                            onClick = onStopGeneration,
+                            colors = IconButtonDefaults.iconButtonColors(
+                                containerColor = Color(0xFFE53935),
+                                contentColor = Color.White
+                            ),
+                            modifier = Modifier
+                                .padding(bottom = 4.dp)
+                                .size(40.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Stop,
+                                contentDescription = "停止生成",
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                    canSend -> {
+                        IconButton(
+                            onClick = onSend,
+                            colors = IconButtonDefaults.iconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            ),
+                            modifier = Modifier
+                                .padding(bottom = 4.dp)
+                                .size(40.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.ArrowUpward,
+                                contentDescription = "发送",
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                    else -> {
+                        IconButton(
+                            onClick = {},
+                            enabled = false,
+                            modifier = Modifier
+                                .padding(bottom = 4.dp)
+                                .size(40.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.ArrowUpward,
+                                contentDescription = "发送",
+                                modifier = Modifier.size(20.dp),
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Bottom toolbar row
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -188,59 +249,6 @@ fun ChatInputBar(
                         ),
                         modifier = Modifier.padding(end = 8.dp)
                     )
-                }
-
-                // [Send / Stop] button
-                when {
-                    isGenerating -> {
-                        // Stop button
-                        IconButton(
-                            onClick = onStopGeneration,
-                            colors = IconButtonDefaults.iconButtonColors(
-                                containerColor = Color(0xFFE53935),
-                                contentColor = Color.White
-                            ),
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Stop,
-                                contentDescription = "停止生成",
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-                    canSend -> {
-                        // Active send button
-                        IconButton(
-                            onClick = onSend,
-                            colors = IconButtonDefaults.iconButtonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
-                            ),
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.ArrowUpward,
-                                contentDescription = "发送",
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-                    else -> {
-                        // Disabled send button
-                        IconButton(
-                            onClick = {},
-                            enabled = false,
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.ArrowUpward,
-                                contentDescription = "发送",
-                                modifier = Modifier.size(20.dp),
-                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-                            )
-                        }
-                    }
                 }
             }
 

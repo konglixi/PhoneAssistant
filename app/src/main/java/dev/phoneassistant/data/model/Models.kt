@@ -40,7 +40,8 @@ enum class ChatRole {
 data class AssistantSettings(
     val apiKey: String = "",
     val model: String = DEFAULT_QWEN_MODEL,
-    val mode: AssistantMode = AssistantMode.OFFLINE
+    val mode: AssistantMode = AssistantMode.OFFLINE,
+    val taskMode: TaskMode = TaskMode.CHAT
 )
 
 const val DEFAULT_QWEN_MODEL = "qwen-plus"
@@ -50,7 +51,8 @@ internal data class ChatCompletionRequest(
     val model: String,
     val messages: List<ChatCompletionMessage>,
     val temperature: Double = 0.2,
-    @SerialName("response_format") val responseFormat: ResponseFormat? = null
+    @SerialName("response_format") val responseFormat: ResponseFormat? = null,
+    val stream: Boolean = false
 )
 
 @Serializable
@@ -72,4 +74,20 @@ internal data class ChatCompletionResponse(
 @Serializable
 internal data class ChatChoice(
     val message: ChatCompletionMessage
+)
+
+/** Streaming SSE chunk from the Qwen/OpenAI-compatible API. */
+@Serializable
+internal data class ChatCompletionChunk(
+    val choices: List<ChatStreamChoice> = emptyList()
+)
+
+@Serializable
+internal data class ChatStreamChoice(
+    val delta: ChatDelta = ChatDelta()
+)
+
+@Serializable
+internal data class ChatDelta(
+    val content: String? = null
 )

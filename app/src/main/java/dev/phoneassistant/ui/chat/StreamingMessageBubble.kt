@@ -10,8 +10,11 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,9 +23,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AudioFile
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.VideoFile
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -35,8 +41,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import dev.phoneassistant.data.model.ChatMessage
 import dev.phoneassistant.data.model.ChatRole
 import dev.phoneassistant.domain.chat.PerfMetrics
@@ -46,7 +54,9 @@ import dev.phoneassistant.domain.chat.PerfMetrics
  * - Streaming text (with blinking cursor)
  * - Collapsible thinking/reasoning section
  * - Performance metrics display
+ * - Attachment previews (images, audio, video)
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun StreamingMessageBubble(
     message: ChatMessage,
@@ -74,6 +84,64 @@ fun StreamingMessageBubble(
                 .padding(horizontal = 14.dp, vertical = 10.dp)
         ) {
             Column {
+                // Attachment previews
+                if (!message.imageUris.isNullOrEmpty()) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    ) {
+                        message.imageUris.forEach { uri ->
+                            AsyncImage(
+                                model = uri,
+                                contentDescription = "附件图片",
+                                modifier = Modifier
+                                    .size(80.dp)
+                                    .clip(RoundedCornerShape(8.dp)),
+                                contentScale = ContentScale.Crop
+                            )
+                        }
+                    }
+                }
+                if (message.audioUri != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.AudioFile,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = textColor.copy(alpha = 0.7f)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            "语音附件",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = textColor.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+                if (message.videoUri != null) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.VideoFile,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = textColor.copy(alpha = 0.7f)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            "视频附件",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = textColor.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+
                 // Collapsible thinking section
                 if (thinkingText.isNotBlank()) {
                     ThinkingSection(

@@ -35,7 +35,8 @@ data class StreamingState(
 
 /**
  * Chat engine for multi-turn conversation with streaming output.
- * Uses MnnLlmBridge.generateWithHistory() for context-aware generation.
+ * Uses MnnLlmBridge.generate() with keepHistory=true, matching the
+ * official MNN demo's code path (C++ Response() with internal history).
  */
 class ChatEngine {
 
@@ -49,7 +50,7 @@ class ChatEngine {
 
     private val stopRequested = AtomicBoolean(false)
 
-    /** Conversation history as (role, content) pairs. */
+    /** Conversation history for UI display (role, content) pairs. */
     private val history = mutableListOf<Pair<String, String>>()
 
     fun clearHistory() {
@@ -65,12 +66,11 @@ class ChatEngine {
     }
 
     /**
-     * Generate a response from the model using full conversation history.
-     * Emits streaming state updates as tokens arrive.
+     * Generate a response using the same code path as the official MNN demo:
+     * bridge.generate(prompt, keepHistory=true) → submitNative → C++ Response().
      *
-     * @param bridge The loaded MnnLlmBridge to use
-     * @param userMessage The new user message to add
-     * @return The final complete response text
+     * C++ LlmSession manages history internally (including system prompt).
+     * Kotlin-side history is maintained only for UI display.
      */
     suspend fun generate(
         bridge: MnnLlmBridge,
@@ -85,12 +85,10 @@ class ChatEngine {
 
         _streamingState.value = StreamingState(isStreaming = true)
 
-        val historyPairs = history.map { (role, content) ->
-            android.util.Pair(role, content)
-        }
-
         try {
-            val metricsMap = bridge.generateWithHistory(historyPairs) { progress ->
+            // Use bridge.generate() — same as official demo's submitNative → Response()
+            // C++ manages history internally with system prompt and keepHistory=true
+            val metricsMap = bridge.generate(userMessage, keepHistory = false) { progress ->
                 resultProcessor.process(progress)
 
                 _streamingState.value = StreamingState(
@@ -116,10 +114,63 @@ class ChatEngine {
                 perfMetrics = perfMetrics
             )
 
-            // Add assistant response to history
+            // Add assistant response to UI history
             addAssistantMessage(finalNormal)
 
             finalNormal
+        } catch (e: Exception) {
+            _streamingState.value = StreamingState(
+                normalText = "生成失败: ${e.message}",
+                isStreaming = false
+            )
+            throw e
+        } finally {
+            _isGenerating.value = false
+        }
+    }
+
+    /**
+     * Generate a response using an external streaming provider (e.g. online API).
+     * The provider receives conversation history and a token callback.
+     * The token callback returns true if stop was requested.
+     *
+     * @param userMessage The new user message to add
+     * @param provider A suspend function that streams tokens via the callback
+     * @return The final complete response text
+     */
+    suspend fun generateStreaming(
+        userMessage: String,
+        provider: suspend (
+            history: List<Pair<String, String>>,
+            onToken: (String) -> Boolean
+        ) -> Unit
+    ): String = withContext(Dispatchers.IO) {
+        addUserMessage(userMessage)
+        stopRequested.set(false)
+        _isGenerating.value = true
+
+        val accumulated = StringBuilder()
+        _streamingState.value = StreamingState(isStreaming = true)
+
+        try {
+            val historyCopy = history.toList()
+            provider(historyCopy) { token ->
+                accumulated.append(token)
+                _streamingState.value = StreamingState(
+                    normalText = accumulated.toString(),
+                    isStreaming = true
+                )
+                stopRequested.get()
+            }
+
+            val finalText = accumulated.toString()
+            _streamingState.value = StreamingState(
+                normalText = finalText,
+                isStreaming = false
+            )
+
+            addAssistantMessage(finalText)
+            finalText
         } catch (e: Exception) {
             _streamingState.value = StreamingState(
                 normalText = "生成失败: ${e.message}",

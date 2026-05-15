@@ -25,10 +25,6 @@ fun PhoneAssistantNavHost(
                 uiState = uiState,
                 onDraftChanged = viewModel::updateDraft,
                 onSend = { viewModel.sendCommand() },
-                onUsePrompt = { prompt ->
-                    viewModel.updateDraft(prompt)
-                    viewModel.sendCommand(prompt)
-                },
                 onRefreshAccessibility = viewModel::refreshAccessibilityStatus,
                 onNavigateToSettings = {
                     navController.navigate(Screen.Settings.route)
@@ -52,6 +48,7 @@ fun PhoneAssistantNavHost(
                 uiState = uiState,
                 onSaveSettings = viewModel::saveSettings,
                 onSwitchMode = viewModel::switchMode,
+                onSwitchTaskMode = viewModel::switchTaskMode,
                 onRefreshAccessibility = viewModel::refreshAccessibilityStatus,
                 onNavigateBack = { navController.popBackStack() },
                 onNavigateToModels = {

@@ -66,11 +66,11 @@ object ModelCatalog {
     val models: List<ModelInfo> = listOf(
         ModelInfo(
             id = "qwen2.5-0.5b",
-            name = "Qwen2.5-0.5B (Planner)",
+            name = "Qwen2.5-0.5B",
             type = ModelType.LLM,
             sizeDescription = "~ 530MB",
             modelScopeRepo = "MNN/Qwen2.5-0.5B-Instruct-MNN",
-            tags = setOf(TAG_PLANNER),
+            tags = emptySet(),
             dirName = "mnn-qwen-model"
         ),
         ModelInfo(

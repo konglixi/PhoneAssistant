@@ -47,6 +47,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import dev.phoneassistant.data.model.AssistantMode
+import dev.phoneassistant.data.model.TaskMode
 import dev.phoneassistant.ui.AssistantUiState
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -55,6 +56,7 @@ fun SettingsScreen(
     uiState: AssistantUiState,
     onSaveSettings: (String, String) -> Unit,
     onSwitchMode: (AssistantMode) -> Unit,
+    onSwitchTaskMode: (TaskMode) -> Unit,
     onRefreshAccessibility: () -> Unit,
     onNavigateBack: () -> Unit,
     onNavigateToModels: () -> Unit = {}
@@ -120,7 +122,46 @@ fun SettingsScreen(
                 }
             }
 
-            // Section 2: Model Configuration (Online)
+            // Section 2: Task Mode Selection
+            SectionHeader("任务模式")
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        FilterChip(
+                            selected = uiState.taskMode == TaskMode.CHAT,
+                            onClick = { onSwitchTaskMode(TaskMode.CHAT) },
+                            label = { Text("对话模式") }
+                        )
+                        FilterChip(
+                            selected = uiState.taskMode == TaskMode.EXECUTION,
+                            onClick = { /* disabled */ },
+                            label = { Text("设备执行模式") },
+                            enabled = false
+                        )
+                    }
+                    Text(
+                        text = "多轮流式对话，所有模型均可使用",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "设备执行模式开发中，暂不可用",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            // Section 3: Model Configuration (Online)
             SectionHeader("在线配置")
             Card(
                 colors = CardDefaults.cardColors(
