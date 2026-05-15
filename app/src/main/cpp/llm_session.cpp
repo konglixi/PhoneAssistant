@@ -78,26 +78,47 @@ void resolveAndroidSteppingEop(
         int current_size,
         int max_new_tokens) {
     auto* context = llm != nullptr ? llm->getContext() : nullptr;
+    int status = context != nullptr ? static_cast<int>(context->status) : -1;
+
+    // Log every 50 tokens to avoid flooding logcat
+    if (current_size % 50 == 0 || current_size < 3) {
+        MNN_DEBUG("EOP_CHECK | size=%d max=%d status=%d pending_eop=%d stop=%d end=%d",
+                  current_size, max_new_tokens, status,
+                  stream_state.pending_eop ? 1 : 0,
+                  stream_state.stop_requested ? 1 : 0,
+                  stream_state.generate_text_end ? 1 : 0);
+    }
+
+    // Case 1: MAX_TOKENS_FINISHED with room to spare → spurious <eop> from
+    // the prebuilt runtime treating each generate(1) as a complete response.
+    // Reset status and discard the pending <eop>.
     if (context != nullptr &&
         context->status == MNN::Transformer::LlmStatus::MAX_TOKENS_FINISHED &&
         !stream_state.stop_requested &&
         current_size < max_new_tokens) {
         restoreAndroidSteppingStatusIfNeeded(llm);
         if (stream_state.pending_eop) {
+            MNN_DEBUG("EOP_CHECK | Case1: discarding spurious <eop> at size=%d", current_size);
             stream_state.generate_text_end = false;
             stream_state.pending_eop = false;
         }
         return;
     }
+    // Case 2: NORMAL_FINISHED without pending_eop → expected after prefill-only
+    // or mid-generation. Reset to RUNNING so the decode loop can continue.
+    // The actual end-of-generation is signaled by <eop> in the text stream.
     if (context != nullptr &&
         context->status == MNN::Transformer::LlmStatus::NORMAL_FINISHED &&
         !stream_state.pending_eop &&
         !stream_state.stop_requested &&
         current_size < max_new_tokens) {
+        MNN_DEBUG("EOP_CHECK | Case2: NORMAL_FINISHED no eop, reset to RUNNING at size=%d", current_size);
         restoreAndroidSteppingStatusIfNeeded(llm);
         return;
     }
+    // Case 3: pending_eop that wasn't discarded by Case 1 → real end-of-generation.
     if (stream_state.pending_eop) {
+        MNN_DEBUG("EOP_CHECK | Case3: REAL <eop> finalized at size=%d status=%d", current_size, status);
         stream_state.finalizePendingEop();
     }
 }
@@ -115,7 +136,16 @@ std::string getUserString(const char* user_content, bool for_history, bool is_r1
     if (is_r1) {
         return "<|User|>" + std::string(user_content) + "<|Assistant|>" + (for_history ? "" : "<think>\n");
     } else {
-        return user_content;
+        // Qwen Instruct chat template
+        return "<|im_start|>user\n" + std::string(user_content) + "<|im_end|>\n<|im_start|>assistant\n";
+    }
+}
+
+std::string getAssistantHistoryString(const std::string& assistant_content, bool is_r1) {
+    if (is_r1) {
+        return assistant_content + "<|end_of_sentence|>";
+    } else {
+        return assistant_content + "<|im_end|>\n";
     }
 }
 
@@ -123,7 +153,7 @@ std::string GetSystemPromptString(std::string system_prompt, bool is_r1) {
     if (is_r1) {
         return std::string("<|begin_of_sentence|>") + system_prompt;
     } else {
-        return system_prompt;
+        return "<|im_start|>system\n" + system_prompt + "<|im_end|>\n";
     }
 }
 
@@ -178,8 +208,8 @@ LlmSession::LlmSession(std::string model_path, json config, json extra_config, s
                 }
             } else {
                 history_.emplace_back(i % 2 == 0 ? "user" : "assistant",
-                                      i % 2 == 0 ? history[i] :
-                                      deleteThinkPart(history[i]));
+                                      i % 2 == 0 ? getUserString(history[i].c_str(), true, is_r1_) :
+                                      getAssistantHistoryString(deleteThinkPart(history[i]), is_r1_));
             }
         }
     }
@@ -202,8 +232,11 @@ bool LlmSession::Load() {
     if (use_mmap) {
         config["tmp_path"] = extra_config_["mmap_dir"].get<std::string>();
     }
+    // Disable MNN built-in template — we manage chat template manually for all models.
+    // Old model exports (tokenizer.txt + incomplete llm_config.json) lack proper
+    // system_prompt_template/chat_template, causing text continuation instead of Q&A.
+    config["use_template"] = false;
     if (is_r1_) {
-        config["use_template"] = false;
         config["precision"] = "high";
     }
     current_config_ = config;
@@ -255,7 +288,7 @@ const MNN::Transformer::LlmContext * LlmSession::Response(const std::string &pro
                     response_result = getR1AssistantString(response_result);
                 }
                 response_result = trimLeadingWhitespace(deleteThinkPart(response_result));
-                history_.emplace_back("assistant", response_result);
+                history_.emplace_back("assistant", getAssistantHistoryString(response_result, is_r1_));
             },
             "submitNative Result"
     };
@@ -290,6 +323,9 @@ const MNN::Transformer::LlmContext * LlmSession::Response(const std::string &pro
         current_size++;
         resolveAndroidSteppingEop(llm_, stream_state, current_size, max_new_tokens_);
     }
+    MNN_DEBUG("LOOP_END | stop=%d text_end=%d size=%d/%d",
+              stop_requested_ ? 1 : 0, generate_text_end_ ? 1 : 0,
+              current_size, max_new_tokens_);
 
     size_t history_after = history_.size();
     stream_state.finalizePendingEop();
@@ -307,7 +343,7 @@ const MNN::Transformer::LlmContext * LlmSession::Response(const std::string &pro
         }
         response_result = trimLeadingWhitespace(deleteThinkPart(response_result));
         if (!response_result.empty()) {
-            history_.emplace_back("assistant", response_result);
+            history_.emplace_back("assistant", getAssistantHistoryString(response_result, is_r1_));
         }
         llm_->syncPromptCache(history_);
     }
